@@ -21,7 +21,7 @@ class Context
 	 *
 	 * @var array
 	 */
-	private $assigns;
+	protected $assigns;
 
 	/**
 	 * Registers for non-variable state data
@@ -35,7 +35,7 @@ class Context
 	 *
 	 * @var Filterbank
 	 */
-	private $filterbank;
+	protected $filterbank;
 
 	/**
 	 * Global scopes
@@ -250,9 +250,8 @@ class Context
 				$object = $object->toLiquid();
 			} else if (method_exists($object, 'toArray')) {
 				$object = $object->toArray();
-			} else {
-				throw new LiquidException("Object has no `toLiquid` nor `toArray` method!");
 			}
+			// we'll cover regular objects later
 		}
 
 		if ($object === null) {
@@ -294,17 +293,31 @@ class Context
 					call_user_func(array($object, Liquid::get('GET_PROPERTY_METHOD')), $nextPartName);
 				} else {
 					// if it's just a regular object, attempt to access a property
-					if (!property_exists($object, $nextPartName)) {
+					if (property_exists($object, $nextPartName)) {
+						$object = $object->$nextPartName;
+					} elseif (method_exists($object, $nextPartName)) {
+						// then try a method
+						$object = call_user_func(array($object, $nextPartName));
+					} else {
 						return null;
 					}
-
-					$object = $object->$nextPartName;
 				}
 			}
+		}
 
-			if (is_object($object) && method_exists($object, 'toLiquid')) {
+		// finally, resolve objects to values
+		if (is_object($object)) {
+			if (method_exists($object, '__toString')) {
+				$object = (string) $object;
+			} elseif (method_exists($object, 'toLiquid')) {
 				$object = $object->toLiquid();
 			}
+		}
+
+		// if everything else fails, throw up
+		if (is_object($object)) {
+			$class = get_class($object);
+			throw new LiquidException("Value of type $class has no `toLiquid` nor `__toString` method");
 		}
 
 		return $object;
